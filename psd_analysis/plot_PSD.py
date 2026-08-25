@@ -93,21 +93,11 @@ def plot_psd_with_markers(psd_df, tau_c_dict, fci_dict, inertial_time=None, type
             f_start = seg_data['start']
             f_end = seg_data['end']
             f_ref = np.array([f_start, f_end])
-            fit_y = power_law_func(f_ref, *seg_data['popt'])
 
-            # 呼叫外部波段函數繪製擬合實線（圖例保持簡短，斜率資訊改用大字體標註於線段旁）
-            plt.loglog(f_ref, fit_y, linestyle='--', linewidth=2.5,
-                       label=f"Seg {seg_idx+1} Fit")
-
-            # 【放大斜率資訊區塊】在擬合線中點旁標註斜率數值，字體加大並加上底框以利論文閱讀
-            f_mid = np.sqrt(f_start * f_end)  # log 空間中點
-            y_mid = power_law_func(f_mid, *seg_data['popt'])
-            plt.annotate(
-                f"slope = {seg_data['slope']:.2f} $\\pm$ {seg_data['slope_error']:.2f}",
-                xy=(f_mid, y_mid), xytext=(0, 12), textcoords='offset points',
-                fontsize=14, fontweight='bold', ha='center', va='bottom',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.85)
-            )
+            # 呼叫外部波段函數繪製擬合實線，斜率資訊回歸圖例區塊顯示
+            plt.loglog(f_ref, power_law_func(f_ref, *seg_data['popt']),
+                       linestyle='--', linewidth=2.5,
+                       label=f"Seg {seg_idx+1} Fit (slope: {seg_data['slope']:.2f} $\\pm$ {seg_data['slope_error']:.2f})")
 
     # --- 7. Kolmogorov K41 參考斜率線渲染 ---
     # 【修正核心】：target_comp 綁定為當前作用中的真實分量 comp，不再發生 'Trace' 找不到造成的崩潰
@@ -127,13 +117,13 @@ def plot_psd_with_markers(psd_df, tau_c_dict, fci_dict, inertial_time=None, type
         plt.text(k_end * 1.05, p_ref[-1], r'$f^{-5/3}$', fontsize=11, fontweight='bold', va='center', ha='left')
 
     # --- 8. 視窗坐標軸收尾樣式優化 ---
-    plt.xlabel("Frequency [Hz]", fontsize=16)
-    plt.ylabel("PSD [nT²/Hz]", fontsize=16)
-    plt.xticks(fontsize=13)
-    plt.yticks(fontsize=13)
-    plt.grid(True, which='both', alpha=0.3, ls=':')
+    plt.xticks(fontsize=20)
+    plt.yticks(fontsize=20)
+    plt.xlabel("Frequency [Hz]", fontsize=20)
+    plt.ylabel("PSD [nT²/Hz]", fontsize=20)
+    #plt.grid(True, which='both', alpha=0.3, ls=':')
     plt.xlim(1e-4, 1)  # 限制頻率範圍 0.0001 - 1 Hz，提升論文圖片可讀性
-    plt.legend(loc='upper right', frameon=True, fontsize=9)
+    plt.legend(loc='upper right', frameon=True, fontsize=20)
 
 def plot_fitting_check(psd_df, type, fit_params):
     """
@@ -195,7 +185,7 @@ def plot_fitting_check(psd_df, type, fit_params):
     plt.xlabel('Frequency (Hz)', fontsize=11)
     plt.ylabel('Compensated Amplitude', fontsize=11)
     plt.title(f'Fig 2: [{type}] Compensated Spectrum Validation', fontsize=12, fontweight='bold')
-    plt.grid(True, which="both", ls="-", alpha=0.2)
+    #plt.grid(True, which="both", ls="-", alpha=0.2)
     
     # 為了防範兩組數據高度差太多，把圖例移到最適位置
     plt.legend(loc='best', fontsize=9)
