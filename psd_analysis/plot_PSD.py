@@ -127,8 +127,10 @@ def plot_psd_with_markers(psd_df, tau_c_dict, fci_dict, inertial_time=None, type
         plt.text(k_end * 1.05, p_ref[-1], r'$f^{-5/3}$', fontsize=11, fontweight='bold', va='center', ha='left')
 
     # --- 8. 視窗坐標軸收尾樣式優化 ---
-    plt.xlabel("Frequency [Hz]", fontsize=11)
-    plt.ylabel("PSD [nT²/Hz]", fontsize=11)
+    plt.xlabel("Frequency [Hz]", fontsize=16)
+    plt.ylabel("PSD [nT²/Hz]", fontsize=16)
+    plt.xticks(fontsize=13)
+    plt.yticks(fontsize=13)
     plt.grid(True, which='both', alpha=0.3, ls=':')
     plt.xlim(1e-4, 1)  # 限制頻率範圍 0.0001 - 1 Hz，提升論文圖片可讀性
     plt.legend(loc='upper right', frameon=True, fontsize=9)
