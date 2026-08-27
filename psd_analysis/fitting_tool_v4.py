@@ -52,6 +52,7 @@ from data_loading_and_converted import load_and_preprocess_mag, load_and_preproc
 from compute_psd_v1 import compute_PSD_params, process_multi_window_psd, compute_PSD_fitting, power_law_func, compute_log_binning
 from compute_other_function import get_fci, compute_acf_at_lag, compute_pdf_analysis, compute_correlation_time, compute_sf_analysis
 from plot_PSD import plot_psd_with_markers, plot_fitting_check
+from auto_fit import auto_detect_fit_range
 from compute_structure_function import plot_structure_functions, plot_flatness_multi_components, plot_single_flatness_with_slope, compute_yagmolaw, compute_yaglom_law
 from compute_yaglom import preprocess_elsasser_variable, analyze_yaglom_law, plot_sigma_c_r
 from compute_agyro_pressure import compute_agyrotropicity, plot_Q, plot_P
@@ -553,6 +554,98 @@ class SolarOrbiterAnalyzer:
             else:
                 print("🔄 [放棄] 已捨棄本次計算，重新啟動區間輸入...")
                 plt.close('all')
+
+    def calc_psd_fitting_auto(self, components=None, f_search=(9e-4, 9e-2),
+                               slope_tol=0.15, min_points=8, save_check_fig=True):
+        """
+        非互動式自動擬合：不用 input() 讓人手動選頻段，改用
+        auto_fit.auto_detect_fit_range() 在指定搜尋範圍內自動找出「局部斜率
+        最穩定」的連續頻段，做為慣性尺度冪律擬合區間。
+
+        適合 agent / 批次腳本一次跑完多個事件；每個分量最多新增一段擬合紀錄，
+        沿用既有的快取機制 (self.params['PSD_fit'] + pickle 備份)，跟手動流程
+        完全相容 —— 之後照樣可以用 plot_psd(auto_save=True) 出圖、
+        export_fitting_data() 匯出。
+
+        :param components: {'Magnetic': [...], 'Velocity': [...]}，指定要
+            擬合的分量；預設 None 代表兩個資料源的所有欄位都嘗試自動擬合。
+        :param f_search: (f_min, f_max)，自動搜尋的頻率上下界 (Hz)。
+            預設對齊既有 K41 參考線範圍 (0.0009 ~ 0.09 Hz)。
+        :param slope_tol: 局部斜率標準差門檻，越小要求越嚴格。
+        :param min_points: 候選區間最少局部斜率點數。
+        :param save_check_fig: 是否把補償譜驗證圖存檔，方便事後人工複核
+            自動擬合結果（強烈建議論文用的數值都要複核過）。
+        """
+        if 'PSD_fit' not in self.params:
+            self.params['PSD_fit'] = {}
+
+        sources = {
+            'Magnetic': ('psd_mag', self.results.get('psd_mag')),
+            'Velocity': ('psd_v', self.results.get('psd_v')),
+        }
+
+        cache_file = os.path.join(self.input_dir, f"PSD_Fitting_Cache_{SAVE_DATE}.pkl")
+        any_success = False
+
+        for source_label, (data_key, psd_df) in sources.items():
+            if psd_df is None:
+                print(f"⚠ 跳過 {source_label}：找不到 {data_key}，請先執行 run_psd()。")
+                continue
+
+            target_comps = components.get(source_label) if components else list(psd_df.columns)
+
+            for target_comp in target_comps:
+                if target_comp not in psd_df.columns:
+                    print(f"⚠ 跳過 {source_label}-{target_comp}：欄位不存在。")
+                    continue
+
+                unique_key = f"{source_label}_{target_comp}"
+                series = psd_df[target_comp].dropna()
+
+                candidate = auto_detect_fit_range(
+                    series.index.values, series.values,
+                    f_min=f_search[0], f_max=f_search[1],
+                    slope_tol=slope_tol, min_points=min_points,
+                )
+
+                if candidate is None:
+                    print(f"❌ {unique_key}：在 {f_search[0]}~{f_search[1]} Hz 範圍內找不到符合條件 "
+                          f"(std<={slope_tol}, n>={min_points}) 的單一冪律區段，略過。")
+                    continue
+
+                f_start, f_end = candidate['start'], candidate['end']
+                print(f"🎯 {unique_key}：自動偵測擬合區間 [{f_start:.5f}, {f_end:.5f}] Hz "
+                      f"(局部斜率 {candidate['mean_slope']:.2f} ± {candidate['std_slope']:.2f}, "
+                      f"{candidate['n_points']} 點)")
+
+                fit_result = compute_PSD_fitting(series, fit_range=(f_start, f_end))
+
+                if unique_key not in self.params['PSD_fit']:
+                    self.params['PSD_fit'][unique_key] = []
+                self.params['PSD_fit'][unique_key].append(fit_result)
+                any_success = True
+
+                print(f"   ✅ 擬合斜率 (Slope): {fit_result['slope']:.2f} ± {fit_result['slope_error']:.2f}")
+
+                if save_check_fig:
+                    plot_fitting_check(psd_df, target_comp, fit_result)
+                    seg_num = len(self.params['PSD_fit'][unique_key])
+                    fig_path = os.path.join(
+                        self.fig_dir, f"auto_fit_check_{unique_key.lower()}_seg{seg_num}.png"
+                    )
+                    plt.savefig(fig_path, bbox_inches='tight', dpi=150)
+                    plt.close('all')
+                    print(f"   💾 驗證圖已存檔：{fig_path}")
+
+        if any_success:
+            try:
+                with open(cache_file, 'wb') as f:
+                    pickle.dump(self.params['PSD_fit'], f)
+                print(f"💾 [快取更新] 自動擬合結果已同步備份至：\n📂 {cache_file}")
+            except Exception as e:
+                print(f"⚠ 快取備份失敗: {e}")
+        else:
+            print("⚠ 本次沒有任何分量成功自動擬合。")
 
     def export_fitting_data(self, format='json'):
         """
